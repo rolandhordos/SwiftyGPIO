@@ -323,7 +323,7 @@ fileprivate extension GPIO {
                 }
             }
         }
-        print("[GPIO INTR] \(name) \(now()) Thread created name:\(thread.name ?? "") priority:\(thread.threadPriority)")
+        print("[GPIO INTR] \(name) \(now()) Thread created name:\(thread.name ?? "")")
         return thread
     }
 
