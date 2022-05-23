@@ -46,7 +46,6 @@ public class GPIO {
     var intFalling: (func: ((GPIO) -> Void), lastCall: Date?)?
     var intRaising: (func: ((GPIO) -> Void), lastCall: Date?)?
     var intChange: (func: ((GPIO) -> Void), lastCall: Date?)?
-    var threadStartedAt: DispatchTime = DispatchTime.distantFuture   // trading sugar to avoid optional here
 
     public init(name: String,
                 id: Int) {
@@ -272,16 +271,20 @@ fileprivate extension GPIO {
         itype.func(self)
         type?.lastCall = Date()
     }
-    
-    func now() -> DispatchTime {
-        return DispatchTime.now()
-    }
-    
+        
     func makePriorityInterruptThread() -> Thread? {
         guard #available(iOS 10.0, macOS 10.12, * /* all Linux available */) else {return nil}
 
         usleep(100000) //100ms sleep: Workaround for poll blocking forever the first time we poll a gpio after the initial export
 
+        let refTime = DispatchTime.now().uptimeNanoseconds
+        func now() -> UInt64 {
+            return DispatchTime.now().uptimeNanoseconds - refTime
+        }
+
+        let name = self.name
+        var eventCount = 0
+        
         let thread = Thread {
 
             let gpath = GPIOBASEPATH+"gpio"+String(self.id)+"/value"
@@ -311,12 +314,16 @@ fileprivate extension GPIO {
                     default:
                         break
                     }
-                    self.interrupt(type: &(self.intChange))
+                    if let event = self.intChange?.func {
+                        eventCount += 1
+                        print("[GPIO INTR] \(name) \(now()) ENTER")
+                        event(self)
+                        print("[GPIO INTR] \(name) \(now()) EXIT")
+                    }
                 }
             }
         }
-        threadStartedAt = now()
-        print("[GPIO] Thread created name:\(thread.name ?? ""), \(threadStartedAt)")
+        print("[GPIO INTR] \(name) \(now()) Thread created name:\(thread.name ?? "") priority:\(thread.threadPriority)")
         return thread
     }
 
