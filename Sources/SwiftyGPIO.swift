@@ -282,6 +282,10 @@ fileprivate extension GPIO {
             return DispatchTime.now().uptimeNanoseconds - refTime
         }
 
+        guard let event = self.intChange?.func else {
+            return nil  // nobody listening
+        }
+        
         let name = self.name
         var eventCount = 0
         
@@ -300,26 +304,15 @@ fileprivate extension GPIO {
           #else
             var pfd = pollfd(fd:fp, events:Int16(truncatingBitPattern:POLLPRI), revents:0)
           #endif
-          
+
             while self.listening {
+                print("[GPIO INTR] \(name) \(now()) WAIT")
                 let ready = poll(&pfd, 1, -1)
                 if ready > -1 {
-                    lseek(fp, 0, SEEK_SET)
-                    read(fp, &buf, 2)
-                    switch buf[0] {
-                    case UInt8(ascii: "0"):
-                        self.interrupt(type: &(self.intFalling))
-                    case UInt8(ascii: "1"):
-                        self.interrupt(type: &(self.intRaising))
-                    default:
-                        break
-                    }
-                    if let event = self.intChange?.func {
-                        eventCount += 1
-                        print("[GPIO INTR] \(name) \(now()) ENTER")
-                        event(self)
-                        print("[GPIO INTR] \(name) \(now()) EXIT")
-                    }
+                    eventCount += 1
+                    print("[GPIO INTR] \(name) \(now()) ENTER")
+//                    event(self)
+//                    print("[GPIO INTR] \(name) \(now()) EXIT")
                 }
             }
         }
