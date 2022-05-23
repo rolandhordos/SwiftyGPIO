@@ -29,6 +29,7 @@
     import Darwin.C
 #endif
 import Foundation
+import Dispatch
 
 internal let GPIOBASEPATH="/sys/class/gpio/"
 
@@ -45,6 +46,7 @@ public class GPIO {
     var intFalling: (func: ((GPIO) -> Void), lastCall: Date?)?
     var intRaising: (func: ((GPIO) -> Void), lastCall: Date?)?
     var intChange: (func: ((GPIO) -> Void), lastCall: Date?)?
+    var threadStartedAt: DispatchTime = DispatchTime.distantFuture   // trading sugar to avoid optional here
 
     public init(name: String,
                 id: Int) {
@@ -134,6 +136,17 @@ public class GPIO {
         if intThread == nil {
             if !exported {enableIO(id)}
             intThread = makeInterruptThread()
+            listening = true
+            intThread?.start()
+        }
+    }
+
+    public func onChangeWithHighPriority(_ closure: @escaping (GPIO) -> Void) {
+        // TODO: all state should be unique with non priority event
+        intChange = (func: closure, lastCall: nil)
+        if intThread == nil {
+            if !exported {enableIO(id)}
+            intThread = makePriorityInterruptThread()
             listening = true
             intThread?.start()
         }
@@ -259,6 +272,54 @@ fileprivate extension GPIO {
         itype.func(self)
         type?.lastCall = Date()
     }
+    
+    func now() -> DispatchTime {
+        return DispatchTime.now()
+    }
+    
+    func makePriorityInterruptThread() -> Thread? {
+        guard #available(iOS 10.0, macOS 10.12, * /* all Linux available */) else {return nil}
+
+        usleep(100000) //100ms sleep: Workaround for poll blocking forever the first time we poll a gpio after the initial export
+
+        let thread = Thread {
+
+            let gpath = GPIOBASEPATH+"gpio"+String(self.id)+"/value"
+            self.direction = .IN
+            self.edge = .BOTH
+
+            let fp = open(gpath, O_RDWR)
+            var buf: [UInt8] = [0, 0, 0]
+            read(fp, &buf, 3) //Dummy read to discard current value
+
+          #if swift(>=4.0)
+            var pfd = pollfd(fd:fp, events:Int16(truncatingIfNeeded:POLLPRI), revents:0)
+          #else
+            var pfd = pollfd(fd:fp, events:Int16(truncatingBitPattern:POLLPRI), revents:0)
+          #endif
+          
+            while self.listening {
+                let ready = poll(&pfd, 1, -1)
+                if ready > -1 {
+                    lseek(fp, 0, SEEK_SET)
+                    read(fp, &buf, 2)
+                    switch buf[0] {
+                    case UInt8(ascii: "0"):
+                        self.interrupt(type: &(self.intFalling))
+                    case UInt8(ascii: "1"):
+                        self.interrupt(type: &(self.intRaising))
+                    default:
+                        break
+                    }
+                    self.interrupt(type: &(self.intChange))
+                }
+            }
+        }
+        threadStartedAt = now()
+        print("[GPIO] Thread created name:\(thread.name ?? ""), \(threadStartedAt)")
+        return thread
+    }
+
 }
 
 extension GPIO: CustomStringConvertible {
