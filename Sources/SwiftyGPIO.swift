@@ -305,13 +305,26 @@ fileprivate extension GPIO {
             var pfd = pollfd(fd:fp, events:Int16(truncatingBitPattern:POLLPRI), revents:0)
           #endif
 
+            var eventSequenceCount = 0
+            var lastSequenceTime = now()
+            
             while self.listening {
                 print("[GPIO INTR] \(name) \(now()) WAIT")
                 let ready = poll(&pfd, 1, -1)                   // "poll() blocks until one of the events occurs"
                 if ready > -1 {
                     eventCount += 1
-                    print("[GPIO INTR] \(name) \(now()) ENTER \(eventCount)")
+//                    print("[GPIO INTR] \(name) \(now()) ENTER \(eventCount)")
 //                    event(self)
+
+                    eventSequenceCount += 1
+                    
+                    if eventSequenceCount == 10 {
+                        let duration = (now() - lastSequenceTime) / 1000000 // convert from nano to milli
+                        print("[GPIO INTR] \(name) \(now()) sequence of 10 took \(duration) ms")
+
+                        lastSequenceTime = now()
+                        eventSequenceCount = 0
+                    }
 
                     lseek(fp, 0, SEEK_SET)
                     read(fp, &buf, 2)                           // but we have to read it to reset it
@@ -320,7 +333,7 @@ fileprivate extension GPIO {
                 }
             }
         }
-        print("[GPIO INTR] \(name) \(now()) Thread created name:\(thread.name ?? "")")
+        print("[GPIO INTR] \(name) \(now()) Thread created name:\(thread.name ?? "") obj:\(thread)")
         return thread
     }
 
