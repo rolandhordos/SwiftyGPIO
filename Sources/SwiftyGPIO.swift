@@ -313,7 +313,7 @@ fileprivate extension GPIO {
                 let ready = poll(&pfd, 1, -1)                   // "poll() blocks until one of the events occurs"
                 if ready > -1 {
                     eventCount += 1
-//                    print("[GPIO INTR] \(name) \(now()) ENTER \(eventCount)")
+                    print("[GPIO INTR] \(name) \(now()) ENTER \(eventCount)")
 //                    event(self)
 
                     eventSequenceCount += 1
